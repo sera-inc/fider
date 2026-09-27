@@ -1,0 +1,34 @@
+# Build this public source revision with the security dependency updates in go.mod.
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.6-bookworm@sha256:116d58cbd88c1297624acc6e967a060012422bacf9930927e23fb719189c6f36 AS source
+COPY . /src
+
+FROM source AS server
+WORKDIR /src
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu g++-x86-64-linux-gnu && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=linux GOARCH=$TARGETARCH CGO_ENABLED=1 CC=x86_64-linux-gnu-gcc CXX=x86_64-linux-gnu-g++ \
+    COMMITHASH=kernel-stg-20260927 VERSION=kernel-stg make build-server
+
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-bookworm@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS ui
+WORKDIR /src
+COPY --from=source /src /src
+RUN npm ci --maxsockets 1 && make build-ssr build-ui
+
+FROM gcr.io/distroless/cc-debian13:debug-nonroot@sha256:f525a9a37aed3e8a848f46cfe055999782d66ed797e9e2886928c8caaaa4fc52 AS debug
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97
+WORKDIR /app
+COPY --from=debug /busybox/busybox /bin/sh
+COPY --from=server /src/migrations /app/migrations
+COPY --from=server /src/views /app/views
+COPY --from=server /src/locale /app/locale
+COPY --from=server /src/LICENSE /app/LICENSE
+COPY --from=server /src/fider /app/fider
+COPY --from=server /src/static /app/static
+COPY --from=ui /src/favicon.png /app/favicon.png
+COPY --from=ui /src/dist /app/dist
+COPY --from=ui /src/robots.txt /app/robots.txt
+COPY --from=ui /src/ssr.js /app/ssr.js
+USER 65532:65532
+EXPOSE 3000
+CMD ["/bin/sh", "-c", "/app/fider migrate && exec /app/fider"]

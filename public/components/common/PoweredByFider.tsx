@@ -27,6 +27,9 @@ export const PoweredByFider = (props: PoweredByFiderProps) => {
         Powered by Fider ⚡
       </a>
       {versionString && <span className="text-2xs block">{versionString}</span>}
+      <a rel="noopener" className="text-2xs block" href="https://github.com/sera-inc/fider/tree/kernel-stg-20260927" target="_blank">
+        Source code (AGPL-3.0)
+      </a>
     </div>
   )
 }
